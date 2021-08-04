@@ -1,0 +1,4 @@
+cpu
+GroundTruth:     c7    c6    c1    c9
+Predicted:     c7    c8    c1    c1
+Accuracy of the network on the 10000 test images: 62 %

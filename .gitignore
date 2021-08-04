@@ -2,3 +2,5 @@ data/StateFarm/imgs/
 data/AUC/
 __pycache__/
 **/__pycache__/
+job.sh
+saved/
