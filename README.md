@@ -41,6 +41,13 @@ Test.py contains the code in order to test the accuracy of a given model by load
 *Trained models, histories, and datasets were not uploaded for conservation of space. 
 
 
+### Presentation Slides:
+[CS523 Group5.pdf](https://github.com/camdenkr/Distracted-Driver-Detector/files/6984993/CS523.Group5.pdf)
+
+
+### Paper:
+
+
 Credit to:
 Code:
 https://github.com/WillKoehrsen/
