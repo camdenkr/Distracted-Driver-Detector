@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader #manages dataset and creates mini batche
 import torchvision.transforms as transforms
 from distractedDriverDataset import DistractedDriverDataset
 from distractedDriverDataset import AUCTestDataset
-from tqdm import tqdm 
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -20,8 +19,13 @@ sys.path.append(str(Path(__file__).parent)+"/..")
 import matplotlib.pyplot as plt
 from torch import optim, cuda
 
-# a lot of help from here
-
+# Hyperparameters:
+in_channel = 3
+num_classes = 10
+learning_rate = 1e-3
+batch_size = 32
+num_epochs = 17
+train_on_gpu = False
 
 ''' 
 Loads and returns models
@@ -32,34 +36,34 @@ def get_model(model_choice):
     if(model_choice == "vgg16"):
         print("vgg16")
         model = models.vgg16(pretrained=True)
+        # Freeze model weights
+        for param in model.parameters():
+            param.requires_grad = False
         n_inputs = model.classifier[6].in_features
-
         # Add on classifier
         model.classifier[6] = nn.Sequential(
             nn.Linear(n_inputs, 256), nn.ReLU(), nn.Dropout(0.4),
             nn.Linear(256, 10), nn.LogSoftmax(dim=1))
+        
     if(model_choice == "alexNet"):
         print("alexNet")
         model = models.alexnet(pretrained=True)
-        n_inputs = model.fc.in_features
-        model.fc = nn.Sequential(
-            nn.Linear(n_inputs, 256), nn.ReLU(), nn.Dropout(0.2),
+        for param in model.parameters():
+            param.requires_grad = False
+        n_inputs = model.classifier[6].in_features
+        model.classifier[6] = nn.Sequential(
+            nn.Linear(n_inputs, 256), nn.ReLU(), nn.Dropout(0.4),
             nn.Linear(256, 10), nn.LogSoftmax(dim=1))
     if(model_choice == "googlenet"):
         print("googlenet")
         model = models.googlenet(pretrained=True)
+        for param in model.parameters():
+            param.requires_grad = False
         n_inputs = model.fc.in_features
         model.fc = nn.Sequential(
-            nn.Linear(n_inputs, 256), nn.ReLU(), nn.Dropout(0.2),
+            nn.Linear(n_inputs, 256), nn.ReLU(), nn.Dropout(0.4),
             nn.Linear(256, 10), nn.LogSoftmax(dim=1))
     return model
-
-# Hyperparameters:
-in_channel = 3
-num_classes = 10
-learning_rate = 1e-3
-batch_size = 32
-num_epochs = 15
 
 
 '''
@@ -69,8 +73,6 @@ model: model object to be trained
 train_loader: training set loader
 '''
 def train_model(model, model_choice, train_loader, valid_loader, criterion, optimizer):
-    # Early stopping intialization
-    epochs_no_improve = 0
     valid_loss_min = np.Inf
 
     valid_max_acc = 0
@@ -188,34 +190,6 @@ def train_model(model, model_choice, train_loader, valid_loader, criterion, opti
                     valid_best_acc = valid_acc
                     best_epoch = epoch
 
-                # Otherwise increment count of epochs with no improvement
-                else:
-                    epochs_no_improve += 1
-                    # Trigger early stopping
-                    if epochs_no_improve >= 3:
-                        print(
-                            f'\nEarly Stopping! Total epochs: {epoch}. Best epoch: {best_epoch} with loss: {valid_loss_min:.2f} and acc: {100 * valid_acc:.2f}%'
-                        )
-                        total_time = timer() - overall_start
-                        print(
-                            f'{total_time:.2f} total seconds elapsed. {total_time / (epoch+1):.2f} seconds per epoch.'
-                        )
-
-                        # Load the best state dict
-                        path = (str(Path(__file__).parent / "../models/" / model_choice / "saved" / str(str(model_choice) + "_saved_" + str(num_epochs) + "batches")))
-                        model.load_state_dict(torch.load(path))
-                        # Attach the optimizer
-                        model.optimizer = optimizer
-
-                        # Format history
-                        history = pd.DataFrame(
-                            history,
-                            columns=[
-                                'train_loss', 'valid_loss', 'train_acc',
-                                'valid_acc'
-                            ])
-                        return model, history
-
     # Attach the optimizer
     model.optimizer = optimizer
     # Record overall time and print out stats
@@ -232,47 +206,13 @@ def train_model(model, model_choice, train_loader, valid_loader, criterion, opti
         columns=['train_loss', 'valid_loss', 'train_acc', 'valid_acc'])
     return model, history
 
-'''
-Tests a trained model
-'''
-def test_model(model, test_loader):
-    model.eval()
-    dataiter = iter(test_loader)
-    images, labels = dataiter.next()
-    classes = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9']
-    print('GroundTruth: ', ' '.join('%5s' % classes[labels[j]] for j in range(4)))
-
-    outputs = model(images)
-
-    _, predicted = torch.max(outputs, 1)
-
-    print('Predicted: ', ' '.join('%5s' % classes[predicted[j]]
-                                for j in range(4)))
-
-
-    correct = 0
-    total = 0
-    # since we're not training, we don't need to calculate the gradients for our outputs
-    with torch.no_grad():
-        for data in test_loader:
-            images, labels = data
-            # calculate outputs by running images through the network
-            outputs = model(images)
-            # the class with the highest energy is what we choose as prediction
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-
-    print('Accuracy of the network on the 10000 test images: %d %%' % (
-        100 * correct / total))
-
 
 
 def main():
     # Load Data
     DATA_PATH = str(Path(__file__).parent / "../data/StateFarm")
 
-
+    # Transforms not including data augmentations
     test_transform = transforms.Compose(
         [
             transforms.ToTensor(),
@@ -280,7 +220,7 @@ def main():
             transforms.CenterCrop(size=224),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
-    
+    # Transforms for training data, including data augmentations
     train_transform = transforms.Compose(
         [
             transforms.ToTensor(),
@@ -294,13 +234,8 @@ def main():
         
 
 
-    #Split randomly:
-    #TODO: Split the dataset by driver
-    # We can split the datset by generating 2 dataset csvs and getting them with two objects, then create 2 datasets with 2 transforms
-    #vertical shift, horizontal shift, zoom and shear with maximum value = 0.2
-    
 
-    # # Find unique drivers in statefarm dataset
+    # Find unique drivers in statefarm dataset
     DATA_PATH = str(Path(__file__).parent / "../data/StateFarm")
     df = pd.read_csv(DATA_PATH + '/driver_imgs_list.csv')
     by_drivers = df.groupby("subject")
@@ -311,7 +246,7 @@ def main():
     # These are the drivers we will be entirely moving to the validation set
     to_val_drivers = unique_drivers[:int(len(unique_drivers) * val_pct)]
     
-    #First split validation and training images for StateFarm dataset
+    #First split validation and training images for StateFarm dataset based on unique drivers
     df = pd.read_csv(DATA_PATH + '/driver_imgs_list.csv', index_col=False)
     matched_df = df.loc[df['subject'].isin(to_val_drivers)]
     unmatched_df = df.loc[~df['subject'].isin(to_val_drivers)]
@@ -320,39 +255,33 @@ def main():
     unmatched_df.to_csv(DATA_PATH + "/SF_train.csv", index=False, header=["subject", "classname", "img"])
     matched_df.to_csv(DATA_PATH + "/SF_train_pers.csv", index=False, header=["subject", "classname", "img"])
     
+    #SF data
     SF_train_set = DistractedDriverDataset(csv_file = DATA_PATH + '/SF_train.csv', root_dir = DATA_PATH + '/imgs/train', transform = train_transform)
     val_set = DistractedDriverDataset(csv_file = DATA_PATH + '/SF_val.csv', root_dir = DATA_PATH + '/imgs/train', transform = test_transform)
     
+    #AUC data
     path = str(Path(__file__).parent / "../data/AUC/v2_cam1_cam2_ split_by_driver/Camera 1")
-    
     test_set = AUCTestDataset(csv_file = path + "/auc_test.csv", root_dir = path + '/test', transform = test_transform)
-    
     AUC_train_set = AUCTestDataset(csv_file = path + "/auc_train.csv", root_dir = path + '/train', transform = train_transform)
 
-
+    # Combine SF and AUC training sets
     train_set = torch.utils.data.ConcatDataset([AUC_train_set, SF_train_set])
 
-
+    #Set up loaders
     train_loader = DataLoader(dataset=train_set, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(dataset=test_set, batch_size=batch_size, shuffle=True)
     valid_loader= DataLoader(dataset=val_set, batch_size=batch_size, shuffle=True)
 
-    '''        
-        transforms.RandomResizedCrop(size=256, scale=(0.8, 1.0)),
-        transforms.RandomRotation(degrees=15),
-        transforms.ColorJitter(),
-        transforms.RandomHorizontalFlip(),'''
-
-
-    #Get a model
+    #Get a model as a commmand line argument, default to vgg16 if no argument is given
     if (len(sys.argv) != 2):
         model_choice = "vgg16"
     else:
         model_choice = sys.argv[1]
     
     model = get_model(model_choice)
-    model.epochs = 0
-    # TODO: Something wrong: 
+    model.epochs = 1
+
+    # GPU-aware programming
     if torch.cuda.is_available():
         DEVICE = torch.device("cuda")
     else:
@@ -365,10 +294,9 @@ def main():
     optimizer = optim.Adam(model.parameters())
     model, history = train_model(model, model_choice, train_loader, valid_loader, criterion, optimizer)
     
+    #Save the history of validation and training accuracies and losses
     path = (str(Path(__file__).parent / "../models/" / model_choice / "saved" / str(str(model_choice) + "_history_saved_" + str(num_epochs) + "batches")))
     history.to_pickle(path)
-
-    # test_model(model, test_loader)
 
 
 if __name__ == "__main__":
