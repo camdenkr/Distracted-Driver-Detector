@@ -75,14 +75,12 @@ history_model = r'vgg16'
 history_epochs = r'5'
 
 history_path = fr'/Users/keshav/Desktop/scripts/latest/Distracted-Driver-Detector/models/{history_model}/saved/{history_model}_history_saved_{history_epochs}batches'
-# history_path = fr'/Users/keshav/Desktop/scripts/latest/Distracted-Driver-Detector/alex_noT'
 
 def plotLoss():
     history = pd.read_pickle(history_path)
 
     plt.figure(figsize=(8, 6))
     for c in ['train_loss', 'valid_loss']:
-    # for c in ['train_acc', 'valid_acc']:
         plt.plot(history[c], label=c)
 
     plt.legend()
