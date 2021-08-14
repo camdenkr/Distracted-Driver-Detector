@@ -42,7 +42,7 @@ Test.py contains the code in order to test the accuracy of a given model by load
 
 
 ### Presentation Slides:
-[CS523_report.pdf](https://github.com/camdenkr/Distracted-Driver-Detector/files/6985876/CS523_report.pdf)
+[CS523 Group5.pdf](https://github.com/camdenkr/Distracted-Driver-Detector/files/6985972/CS523.Group5.pdf)
 
 
 ### Paper:
